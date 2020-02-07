@@ -2,7 +2,7 @@ import * as core from '@actions/core'
 import * as exec from '@actions/exec'
 import * as tc from '@actions/tool-cache'
 
-import * as https from 'https'
+import * as fs from 'fs'
 import * as os from 'os'
 import * as path from 'path'
 
@@ -12,8 +12,31 @@ import * as semver from 'semver'
 const osPlat = os.platform() // possible values: win32 (Windows), linux (Linux), darwin (macOS)
 core.debug(`platform: ${osPlat}`)
 
-// This is temporary until we have a better way of fetching releases (see #1, #4 for details)
-export const juliaVersions = ['v1.4.1-rc1', 'v1.3.1', 'v1.3.0', 'v1.3.0-rc5', 'v1.3.0-rc4', 'v1.3.0-rc3', 'v1.3.0-rc2', 'v1.0.5', 'v1.2.0', 'v1.3.0-rc1', 'v1.2.0-rc3', 'v1.3.0-alpha', 'v1.2.0-rc2', 'v1.2.0-rc1', 'v1.1.1', 'v1.0.4', 'v1.1.0', 'v1.1.0-rc2', 'v1.1.0-rc1', 'v1.0.3', 'v1.0.2', 'v1.0.1', 'v1.0.0', 'v0.7.0', 'v1.0.0-rc1', 'v0.7.0-rc3', 'v0.7.0-rc2', 'v0.7.0-rc1', 'v0.7.0-beta2', 'v0.6.4', 'v0.7.0-beta', 'v0.7.0-alpha', 'v0.6.3', 'v0.6.2', 'v0.6.1', 'v0.6.0', 'v0.6.0-rc3', 'v0.6.0-rc2', 'v0.5.2', 'v0.6.0-rc1', 'v0.6.0-pre.beta', 'v0.5.1', 'v0.6.0-pre.alpha', 'v0.5.0', 'v0.4.7', 'v0.5.0-rc4', 'v0.5.0-rc3', 'v0.5.0-rc2', 'v0.5.0-rc1', 'v0.5.0-rc0', 'v0.4.6', 'v0.4.5', 'v0.4.4', 'v0.4.3', 'v0.4.2', 'v0.4.1', 'v0.3.12', 'v0.4.0', 'v0.4.0-rc4', 'v0.4.0-rc3', 'v0.4.0-rc2', 'v0.4.0-rc1', 'v0.3.11', 'v0.3.10', 'v0.3.9', 'v0.3.8', 'v0.3.7', 'v0.3.6', 'v0.3.5', 'v0.3.4', 'v0.3.3', 'v0.3.2', 'v0.3.1', 'v0.3.0', 'v0.3.0-rc4', 'v0.3.0-rc3', 'v0.3.0-rc2', 'v0.3.0-rc1', 'v0.2.0-rc1', 'v0.2.0-rc3', 'v0.2.0-rc4', 'v0.2.0', 'v0.2.0-rc2']
+/**
+ * @returns The content of the downloaded versions.json file as object.
+ */
+export async function getJuliaVersionInfo(): Promise<object> {
+    let versionsFile = tc.find('julia-versions', 'latest')
+    if (!versionsFile) {
+        versionsFile = await tc.downloadTool('https://julialang-s3.julialang.org/bin/versions.json')
+        tc.cacheFile(versionsFile, 'versions.json', 'julia-versions', 'latest')
+    }
+
+    return JSON.parse(fs.readFileSync(versionsFile).toString())
+}
+
+/**
+ * @returns An array of all Julia versions available for download
+ */
+export async function getJuliaVersions(juliaVersionInfo): Promise<string[]> {
+    let versions: string[] = []
+
+    for (var version in juliaVersionInfo) {
+        versions.push(version)
+    }
+
+    return versions
+}
 
 export async function getJuliaVersion(availableReleases: string[], versionInput: string): Promise<string> {
     if (semver.valid(versionInput) == versionInput) {
@@ -112,7 +135,7 @@ export async function installJulia(version: string, arch: string): Promise<strin
             return `${process.env.HOME}/julia`
         case 'win32':
             const juliaInstallationPath = path.join('C:', 'Julia')
-            if (version == 'nightly' || semver.gtr(version, '1.3', {includePrerelease: true})) {
+            if (version == 'nightly' || semver.gtr(version, '1.3', { includePrerelease: true })) {
                 // The installer changed in 1.4: https://github.com/JuliaLang/julia/blob/ef0c9108b12f3ae177c51037934351ffa703b0b5/NEWS.md#build-system-changes
                 await exec.exec('powershell', ['-Command', `Start-Process -FilePath ${juliaDownloadPath} -ArgumentList "/SILENT /dir=${juliaInstallationPath}" -NoNewWindow -Wait`])
             } else {
